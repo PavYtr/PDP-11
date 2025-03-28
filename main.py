@@ -1,17 +1,23 @@
 from pdp_11_mem import w_read
-from pdp_11_commands import commands
+from pdp_11_commands import *
+from data_load import *
 
 
 def main():
+    load_data("byte_code.txt")
+
     pc = 0o01000
     while True:
         word = w_read(pc)
-        print(f"{pc:06o} {word:06o}")
         pc += 2
         
-        for opcode, cmd in commands.items():
-            if (word & cmd.mask) == opcode:
-                cmd.handler()
+        for cmd in commands:
+            if (word & cmd["mask"]) == cmd["opcode"]:
+                cmd["handler"]()
                 break
-        else:
-            print("Unknown")
+            else:
+                print("Unknown")
+
+
+if __name__ == "__main__":
+    main()
