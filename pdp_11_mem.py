@@ -2,6 +2,7 @@
 MEMSIZE = 64 * 1024
 
 mem = [0] * MEMSIZE
+reg = [0] * 8
 
 def b_write(adr, value):
     mem[adr] = value & 0xFF

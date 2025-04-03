@@ -3,20 +3,22 @@ from pdp_11_commands import *
 from data_load import *
 
 
-def main():
-    load_data("byte_code.txt")
 
-    pc = 0o01000
+def main():
+    load_data("01_sum.pdp.o")
+    reg[7] = 0o1000
+    
     while True:
-        word = w_read(pc)
-        pc += 2
+        word = w_read(reg[7])
+        reg[7] += 2
         
         for cmd in commands:
             if (word & cmd["mask"]) == cmd["opcode"]:
-                cmd["handler"]()
+                cmd["handler"](word)
                 break
-            else:
-                print("Unknown")
+        else:
+            print(f"Unknown command: {word:06o}")
+            break
 
 
 if __name__ == "__main__":
