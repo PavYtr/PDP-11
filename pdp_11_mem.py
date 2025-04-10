@@ -1,56 +1,101 @@
+"""
+Модуль эмуляции памяти PDP-11.
+
+Этот модуль реализует:
+- Основную память эмулятора (64Kb)
+- Регистры общего назначения (8 слов)
+- Функции для работы с памятью (чтение/запись байтов и слов)
+
+Основные константы:
+- MEMSIZE: размер памяти в байтах (64Kb)
+
+Основные переменные:
+- mem: массив, представляющий основную память
+- reg: массив регистров общего назначения (R0-R7)
+
+Функции:
+- b_write: запись байта в память
+- b_read: чтение байта из памяти
+- w_write: запись слова в память
+- w_read: чтение слова из памяти
+
+Особенности:
+- Слово - 16 бит (2 байта)
+- Адреса слов должны быть четными
+"""
 
 MEMSIZE = 64 * 1024
 
 mem = [0] * MEMSIZE
 reg = [0] * 8
 
+
 def b_write(adr, value):
+    """
+    Записывает байт в память по указанному адресу.
+
+    Args:
+        adr (int): Адрес для записи (0 <= adr < MEMSIZE)
+        value (int): Значение для записи (младший байт сохраняется)
+    """
     mem[adr] = value & 0xFF
-    
+
 
 def b_read(adr):
+    """
+    Читает байт из памяти по указанному адресу.
+
+    Args:
+        adr (int): Адрес для чтения (0 <= adr < MEMSIZE)
+
+    Returns:
+        int: Значение прочитанного байта (0-255)
+    """
     return mem[adr]
-           
+
 
 def w_write(adr, value):
+    """
+    Записывает слово (2 байта) в память по указанному адресу.
+
+    Args:
+        adr (int): Адрес для записи (должен быть четным, 0 <= adr < MEMSIZE-1)
+        value (int): Значение для записи (младшее слово сохраняется)
+
+    Raises:
+        ValueError: если адрес нечетный
+
+    Notes:
+        - Младший байт записывается по адресу adr
+        - Старший байт записывается по адресу adr+1
+    """
     if adr % 2 != 0:
-        raise ValueError("Word adress must be even")
-    mem[adr+1] = (value >> 8) & 0xFF
+        raise ValueError("Word address must be even")
+    mem[adr + 1] = (value >> 8) & 0xFF
     mem[adr] = value & 0xFF
 
 
 def w_read(adr):
+    """
+    Читает слово (2 байта) из памяти по указанному адресу.
+
+    Args:
+        adr (int): Адрес для чтения (должен быть четным, 0 <= adr < MEMSIZE-1)
+
+    Returns:
+        int: Значение прочитанного слова (0-65535)
+
+    Raises:
+        ValueError: если адрес нечетный
+        IndexError: если адрес выходит за границы памяти
+
+    Notes:
+        - Младший байт читается из адреса adr
+        - Старший байт читается из адреса adr+1
+    """
     if adr % 2 != 0:
-        raise ValueError("Word adress must be even")
-    word = mem[adr+1] << 8 
+        raise ValueError("Word address must be even")
+    word = mem[adr+1] << 8
     word |= mem[adr]
-        
+
     return word & 0xFFFF
-
-
-
-
-# b0 = 0x0a
-# b1 = 0x0b
-# b_write(2, b0)
-# assert b0 == b_read(2)
-
-
-# adr = 4
-# w = 0xb0a
-# b_write(adr, b0)
-# b_write(adr+1, b1)
-# wres = w_read(adr)    
-
-# adr = 6
-# word = 0x0
-# w_write(6, word)
-# assert word == w_read(6)
-
-
-# print(wres, b1, b0)
-# assert w == wres
-
-# a1 = -1
-# w_write(14, a1)
-# assert w_read(14) == a1
