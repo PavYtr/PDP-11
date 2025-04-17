@@ -20,6 +20,7 @@
     - opcode: код операции
     - name: мнемоника команды
     - handler: функция-обработчик команды
+    - params: параметры команды (ss, dd и т.д.)
 
 Режимы адресации:
     Поддерживаются следующие режимы адресации:
@@ -28,38 +29,56 @@
     - 2: автоинкрементный (R)+
 """
 
-from pdp_11_mem import w_read, w_write, reg
+from pdp_11_mem import w_read, w_write, reg, b_write
 import sys
 
-commands = [
-    {'mask': 0o177777, 'opcode': 0o000000, 'name': 'halt', 'handler': lambda w: do_halt(w)},
-    {'mask': 0o170000, 'opcode': 0o010000, 'name': 'mov', 'handler': lambda w: do_mov(w)},
-    {'mask': 0o170000, 'opcode': 0o060000, 'name': 'add', 'handler': lambda w: do_add(w)},
-    {'mask': 0o177777, 'opcode': 0o177777, 'name': 'unknown', 'handler': lambda w: do_unknown(w)}
-]
+args = {}
 
+commands = [
+    {'mask': 0o177777, 'opcode': 0o000000, 'name': 'halt', 'handler': lambda w: do_halt(w), 'params': ()},
+    {'mask': 0o170000, 'opcode': 0o010000, 'name': 'mov', 'handler': lambda w: do_mov(w), 'params': ('ss', 'dd')},
+    {'mask': 0o170000, 'opcode': 0o060000, 'name': 'add', 'handler': lambda w: do_add(w), 'params': ('ss', 'dd')},
+    {'mask': 0o177777, 'opcode': 0o177777, 'name': 'unknown', 'handler': lambda w: do_unknown(w), 'params': ()}
+]
 
 class ModeNotIplementedError(Exception):
     """Исключение, вызываемое при использовании неподдерживаемого режима адресации."""
     pass
 
 
+class ModeRegistrArg:
+    """Класс для представления аргумента команды с учетом режима адресации."""
+
+    def __init__(self, address: int, value: int, is_register: bool = False):
+        self.address = address
+        self.value = value
+        self.is_register = is_register
+
+    def write(self, value: int, is_word: bool = True):
+        """Записывает значение по адресу с учетом типа (регистр/память) и размера (слово/байт)."""
+        if self.is_register:
+            reg[self.address] = value
+        else:
+            if is_word:
+                w_write(self.address, value)
+            else:
+                b_write(self.address, value)
+
+
 class ArgsProcessor:
     """Класс для обработки аргументов команд и режимов адресации."""
 
     @staticmethod
-    def get_mr(w):
+    def get_mr(w) -> ModeRegistrArg:
         """
-        Разбирает режим адресации и возвращает адрес и значение.
+        Разбирает режим адресации и возвращает объект ModeRegistrArg.
 
         Args:
-            w (int): Слово, содержащее номер регистра (младшие 3 бита) 
+            w (int): Слово, содержащее номер регистра (младшие 3 бита)
                     и режим адресации (биты 3-5)
 
         Returns:
-            tuple: (addr, value), где:
-                addr - адрес в памяти или номер регистра
-                value - значение из регистра или памяти
+            ModeRegistrArg: объект, содержащий адрес и значение
 
         Raises:
             ModeNotIplementedError: если указан неподдерживаемый режим адресации
@@ -81,31 +100,24 @@ class ArgsProcessor:
         else:
             raise ModeNotIplementedError(f"Unsupported mode {mode}")
 
-        return addr, value
+        return ModeRegistrArg(addr, value, mode == 0)
 
     @staticmethod
-    def process(w):
+    def process(params: tuple, word: int):
         """
-        Обрабатывает слово команды, извлекая source и destination.
+        Обрабатывает слово команды, извлекая аргументы в глобальный словарь args.
 
         Args:
-            w (int): Слово команды
-
-        Returns:
-            tuple: (src, dst, src_addr, src_val, dst_addr, dst_val), где:
-                src - поле source из команды
-                dst - поле destination из команды
-                src_addr - адрес источника
-                src_val - значение источника
-                dst_addr - адрес приемника
-                dst_val - значение приемника
+            params (tuple): кортеж с типами параметров ('ss', 'dd' и т.д.)
+            word (int): слово команды
         """
-        src = (w >> 6) & 0o77
-        dst = w & 0o77
-
-        src_addr, src_val = ArgsProcessor.get_mr(src)
-        dst_addr, dst_val = ArgsProcessor.get_mr(dst)
-        return src, dst, src_addr, src_val, dst_addr, dst_val
+        for param in params:
+            if param == 'ss':
+                args['ss'] = ArgsProcessor.get_mr(word >> 6)
+            elif param == 'dd':
+                args['dd'] = ArgsProcessor.get_mr(word & 0o77)
+            else:
+                raise ValueError(f'Unknown argument type {param}')
 
 
 def do_mov(w):
@@ -117,14 +129,12 @@ def do_mov(w):
     Args:
         w (int): Слово команды
     """
-    src, dst, src_addr, src_val, dst_addr, dst_val = ArgsProcessor.process(w)
+    ArgsProcessor.process(('ss', 'dd'), w)
+    ss = args['ss']
+    dd = args['dd']
 
-    # Для регистрового режима
-    if (dst >> 3) & 7 == 0:
-        reg[dst & 7] = src_val
-    else:
-        w_write(dst_addr, src_val)
-    print(f"    #{src_val}, R{dst & 7}")
+    dd.write(ss.value)
+    print(f"    #{ss.value:06o}, r{dd.address if dd.is_register else dd.address >> 1}")
 
 
 def do_add(w):
@@ -136,15 +146,13 @@ def do_add(w):
     Args:
         w (int): Слово команды
     """
-    src, dst, src_addr, src_val, dst_addr, dst_val = ArgsProcessor.process(w)
-    result = (src_val + dst_val)
+    ArgsProcessor.process(('ss', 'dd'), w)
+    ss = args['ss']
+    dd = args['dd']
 
-    # Для регистрового режима
-    if (dst >> 3) & 7 == 0:
-        reg[dst & 7] = result
-    else:
-        w_write(dst_addr, result)
-    print(f"    R{src}, R{dst}")
+    result = ss.value + dd.value
+    dd.write(result)
+    print(f"    r{ss.address if ss.is_register else ss.address >> 1}, r{dd.address if dd.is_register else dd.address >> 1}")
 
 
 def do_halt(w):
@@ -153,9 +161,8 @@ def do_halt(w):
 
     Выводит содержимое регистров и завершает работу программы.
     """
-    print("\n")
-    for i in range(len(reg)):
-        print(f"R{i} : ", reg[i])
+    print("\n---------------- halted ---------------")
+    reg_dump(reg)
     sys.exit(0)
 
 
@@ -165,4 +172,8 @@ def do_unknown(w):
 
     Выводит сообщение о неизвестной команде.
     """
-    print("\nUNKNOWN")
+    print("\nUNKNOWN COMMAND")
+
+def reg_dump(reg):
+    print(f"r0={reg[0]:06o} r2={reg[2]:06o} r4={reg[4]:06o} sp={reg[6]:06o}")
+    print(f"r1={reg[1]:06o} r3={reg[3]:06o} r5={reg[5]:06o} pc={reg[7]:06o}")
