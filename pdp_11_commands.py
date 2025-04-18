@@ -32,13 +32,12 @@
 from pdp_11_mem import w_read, w_write, reg, b_write
 import sys
 
-args = {}
 
 commands = [
-    {'mask': 0o177777, 'opcode': 0o000000, 'name': 'halt', 'handler': lambda w: do_halt(w), 'params': ()},
-    {'mask': 0o170000, 'opcode': 0o010000, 'name': 'mov', 'handler': lambda w: do_mov(w), 'params': ('ss', 'dd')},
-    {'mask': 0o170000, 'opcode': 0o060000, 'name': 'add', 'handler': lambda w: do_add(w), 'params': ('ss', 'dd')},
-    {'mask': 0o177777, 'opcode': 0o177777, 'name': 'unknown', 'handler': lambda w: do_unknown(w), 'params': ()}
+    {'mask': 0o177777, 'opcode': 0o000000, 'name': 'halt', 'handler': lambda _args: do_halt(_args), 'params': ()},
+    {'mask': 0o170000, 'opcode': 0o010000, 'name': 'mov', 'handler': lambda _args: do_mov(_args), 'params': ('ss', 'dd')},
+    {'mask': 0o170000, 'opcode': 0o060000, 'name': 'add', 'handler': lambda _args: do_add(_args), 'params': ('ss', 'dd')},
+    {'mask': 0o177777, 'opcode': 0o177777, 'name': 'unknown', 'handler': lambda _args: do_unknown(_args), 'params': ()}
 ]
 
 class ModeNotIplementedError(Exception):
@@ -57,7 +56,7 @@ class ModeRegistrArg:
     def write(self, value: int, is_word: bool = True):
         """Записывает значение по адресу с учетом типа (регистр/память) и размера (слово/байт)."""
         if self.is_register:
-            reg[self.address] = value
+            reg[self.address] = value & 0xFFFF
         else:
             if is_word:
                 w_write(self.address, value)
@@ -67,6 +66,19 @@ class ModeRegistrArg:
 
 class ArgsProcessor:
     """Класс для обработки аргументов команд и режимов адресации."""
+    def __init__(self):
+        self.ss = None
+        self.dd = None
+        self.nn = None
+        self.xx = None
+        self.r = None
+
+    def clear(self):
+        self.ss = None
+        self.dd = None
+        self.nn = None
+        self.xx = None
+        self.r = None
 
     @staticmethod
     def get_mr(w) -> ModeRegistrArg:
@@ -90,20 +102,29 @@ class ArgsProcessor:
         if mode == 0:  # Регистровый
             addr = r
             value = reg[r]
+            print(f'r{r}', end=' ')
+
         elif mode == 1:  # Косвенный
             addr = reg[r]
             value = w_read(addr)
+            print(f'(r{r})', end=' ')
+
         elif mode == 2:  # Автоинкрементный
             addr = reg[r]
             value = w_read(addr)
             reg[r] += 2
+
+            if r == 7:
+                print(f'#{value:06o}', end=' ')
+            else:
+                print(f'(r{r})+', end=' ')
+
         else:
             raise ModeNotIplementedError(f"Unsupported mode {mode}")
 
         return ModeRegistrArg(addr, value, mode == 0)
 
-    @staticmethod
-    def process(params: tuple, word: int):
+    def process(self, params: tuple, word: int):
         """
         Обрабатывает слово команды, извлекая аргументы в глобальный словарь args.
 
@@ -111,16 +132,19 @@ class ArgsProcessor:
             params (tuple): кортеж с типами параметров ('ss', 'dd' и т.д.)
             word (int): слово команды
         """
+        self.clear()
         for param in params:
             if param == 'ss':
-                args['ss'] = ArgsProcessor.get_mr(word >> 6)
+                self.ss = ArgsProcessor.get_mr(word >> 6)
             elif param == 'dd':
-                args['dd'] = ArgsProcessor.get_mr(word & 0o77)
+                self.dd = ArgsProcessor.get_mr(word & 0o77)
             else:
                 raise ValueError(f'Unknown argument type {param}')
 
+        return self.ss, self.dd
 
-def do_mov(w):
+
+def do_mov(_args):
     """
     Обработчик команды MOV (перемещение данных).
 
@@ -129,15 +153,11 @@ def do_mov(w):
     Args:
         w (int): Слово команды
     """
-    ArgsProcessor.process(('ss', 'dd'), w)
-    ss = args['ss']
-    dd = args['dd']
 
-    dd.write(ss.value)
-    print(f"    #{ss.value:06o}, r{dd.address if dd.is_register else dd.address >> 1}")
+    _args.dd.write(_args.ss.value)
 
 
-def do_add(w):
+def do_add(_args):
     """
     Обработчик команды ADD (сложение).
 
@@ -146,16 +166,11 @@ def do_add(w):
     Args:
         w (int): Слово команды
     """
-    ArgsProcessor.process(('ss', 'dd'), w)
-    ss = args['ss']
-    dd = args['dd']
-
-    result = ss.value + dd.value
-    dd.write(result)
-    print(f"    r{ss.address if ss.is_register else ss.address >> 1}, r{dd.address if dd.is_register else dd.address >> 1}")
+    result = _args.ss.value + _args.dd.value
+    _args.dd.write(result)
 
 
-def do_halt(w):
+def do_halt(_args):
     """
     Обработчик команды HALT (остановка процессора).
 
@@ -166,7 +181,7 @@ def do_halt(w):
     sys.exit(0)
 
 
-def do_unknown(w):
+def do_unknown(_args):
     """
     Обработчик неизвестной команды.
 

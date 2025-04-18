@@ -1,14 +1,15 @@
 from pdp_11_mem import w_read, reg
-from pdp_11_commands import commands
+from pdp_11_commands import commands, ArgsProcessor
 from data_load import load_data
 
 
 def main():
-    load_data("01_sum.pdp.o")
+    load_data("integral_tests/01_sum_neg.pdp.o")
 
     reg[7] = 0o1000
     print("---------------- running --------------")
 
+    args = ArgsProcessor()
     while True:
         word = w_read(reg[7])
         print(f"{reg[7]:06o}:", end=" ")
@@ -18,10 +19,10 @@ def main():
             if (word & cmd["mask"]) == cmd["opcode"]:
                 print(cmd["name"], end=" ")
 
-                if hasattr(__import__(__name__), 'args'):
-                    globals()['args'].clear()
+                args.process(cmd["params"], word)
 
-                cmd["handler"](word)
+                cmd["handler"](args)
+                print()
                 break
 
 
