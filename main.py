@@ -4,7 +4,7 @@ from data_load import load_data
 
 
 def main():
-    load_data("integral_tests/01_sum_neg.pdp.o")
+    load_data("integral_tests/02_sob.pdp.o")
 
     reg[7] = 0o1000
     print("---------------- running --------------")
